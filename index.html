@@ -780,12 +780,9 @@
             window.addEventListener('resize', resizeCanvas);
             window.addEventListener('keydown', handleKeyDown);
             window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
-            
-            if (isMobileDevice) {
-                setupJoystickControls();
-            }
-            
-            canvas.addEventListener('click', handleCanvasClick);
+
+            // Hợp nhất xử lý chạm và click vào một chỗ để tránh xung đột trên di động
+            setupTouchControls();
         }
 
         function startGame() {
@@ -817,13 +814,6 @@
             }
         }
         
-        function handleCanvasClick(e) {
-            tryPlayAllSounds(); // Cần thiết cho trường hợp người dùng chỉ dùng chuột
-            if (gameState === STATE_START || gameState === STATE_WIN) {
-                startGame();
-            }
-        }
-
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -869,11 +859,11 @@
             console.log("Audio has been unlocked.");
         }
 
-        function setupJoystickControls() {
+        function setupTouchControls() {
             const base = document.getElementById('joystick-base');
             const handle = document.getElementById('joystick-handle');
-            const baseRadius = base.offsetWidth / 2;
-            const handleRadius = handle.offsetWidth / 2;
+            const baseRadius = 60; // 120px / 2
+            const handleRadius = 30; // 60px / 2
             const maxMove = baseRadius - handleRadius;
 
             canvas.addEventListener('touchstart', (e) => {
@@ -885,7 +875,8 @@
                     return; // Không xử lý joystick ngay trong lần chạm đầu tiên này
                 }
 
-                if (gameState !== STATE_GAMEPLAY) return; // Chỉ xử lý joystick khi đang chơi
+                // Chỉ kích hoạt joystick trên di động và khi đang chơi
+                if (!isMobileDevice || gameState !== STATE_GAMEPLAY) return;
 
                 const touch = e.touches[0];
                 joystick.active = true;
@@ -902,7 +893,7 @@
 
             canvas.addEventListener('touchmove', (e) => {
                 e.preventDefault();
-                if (!joystick.active) return;
+                if (!isMobileDevice || !joystick.active) return;
 
                 const touch = e.touches[0];
                 joystick.currentX = touch.clientX;
@@ -926,7 +917,7 @@
             }, { passive: false });
 
             const onTouchEnd = (e) => {
-                if (!joystick.active) return;
+                if (!isMobileDevice || !joystick.active) return;
                 e.preventDefault();
                 joystick.active = false;
                 joystick.dx = 0;
