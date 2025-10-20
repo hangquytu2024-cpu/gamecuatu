@@ -9,56 +9,55 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         canvas { display: block; }
-        #touch-controls {
+        /* --- CSS CHO JOYSTICK ẢO --- */
+        .joystick {
             position: fixed;
-            bottom: 20px;
-            left: 20px;
-            display: none; /* Hidden by default, shown via JS for mobile */
+            display: none; /* Ẩn mặc định, chỉ hiện khi chạm */
             opacity: 0.7;
             z-index: 10;
+            user-select: none; /* Ngăn chọn văn bản */
+            pointer-events: none; /* Cho phép click xuyên qua */
         }
-        .touch-btn {
-            width: 50px;
-            height: 50px;
+        #joystick-base {
+            width: 120px;
+            height: 120px;
             background: #888;
             border: 2px solid #fff;
             border-radius: 50%;
-            color: white;
-            font-size: 24px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            user-select: none; /* Prevents text selection on tap */
         }
-        #touch-up { position: absolute; bottom: 55px; left: 55px; }
-        #touch-down { position: absolute; bottom: 0; left: 55px; }
-        #touch-left { position: absolute; bottom: 27.5px; left: 0; }
-        #touch-right { position: absolute; bottom: 27.5px; left: 110px; }
+        #joystick-handle {
+            width: 60px;
+            height: 60px;
+            background: #ccc;
+            border-radius: 50%;
+        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
-    <div id="touch-controls">
-        <div id="touch-up" class="touch-btn">▲</div>
-        <div id="touch-down" class="touch-btn">▼</div>
-        <div id="touch-left" class="touch-btn">◀</div>
-        <div id="touch-right" class="touch-btn">▶</div>
+    <!-- Joystick ảo sẽ được tạo và điều khiển bằng JavaScript -->
+    <div id="joystick-base" class="joystick">
+        <div id="joystick-handle" class="joystick"></div>
     </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
+        // --- TỰ ĐỘNG CO GIÃN CHO DI ĐỘNG ---
+        const isMobileDevice = /Mobi|Android/i.test(navigator.userAgent);
+        const scaleFactor = isMobileDevice ? 0.7 : 1.0; // Giảm 30% kích thước và tốc độ trên di động
+
         // --- CÀI ĐẶT GAME ---
-        const PLAYER_SPEED = 2.0; // Giảm 50% từ 2.4
-        const PLAYER_SIZE = 100;
-        const SPAMMER_SIZE = 100;
-        const FARMER_SIZE = 100;
-        const FARMER_HITBOX_WIDTH = 40; // Hitbox thực tế của Farmer
-        const FARMER_HITBOX_HEIGHT = 100; 
-        const BULLET_SPEED = 1.4; // Giảm 30% (2 * 0.7)
+        const PLAYER_SPEED = 2.0 * scaleFactor;
+        const PLAYER_SIZE = 100 * scaleFactor;
+        const SPAMMER_SIZE = 100 * scaleFactor;
+        const FARMER_SIZE = 100 * scaleFactor;
+        const FARMER_HITBOX_WIDTH = 40 * scaleFactor; // Hitbox thực tế của Farmer
+        const FARMER_HITBOX_HEIGHT = 100 * scaleFactor;
+        const BULLET_SPEED = 1.4 * scaleFactor;
         const BULLET_INTERVAL = 400; // frames (Increased, shoots slower)
-        const FARMER_SPEED = 2; // (Giảm một nửa)
+        const FARMER_SPEED = 2 * scaleFactor;
         const FARMER_ANIMATION_FRAMES = 1; // Sửa lại: Farmer là ảnh tĩnh
         const STONE_COUNT_TO_WIN = 5; // Số đá cần thu thập để thắng
         const INVINCIBILITY_DURATION = 120; // 2 giây ở 60 FPS
@@ -67,7 +66,7 @@
         // Khu vực (sẽ được tính toán lại trong resizeCanvas)
         let START_AREA_END;
         let OBSTACLE_AREA_END;
-        
+
         // Vị trí cố định
         const CREATOR_NAME = "QuyTu";
         const PLAYER_START_X = 50;
@@ -77,7 +76,7 @@
         let RETURN_BOX_Y; // Sẽ được tính toán khi resize
 
         // Cài đặt đá (sử dụng hình ảnh)
-        const STONE_SIZE = 60;
+        const STONE_SIZE = 60 * scaleFactor;
         const STONE_TYPES = [
             { assetKey: 'stone1', size: STONE_SIZE },
             { assetKey: 'stone2', size: STONE_SIZE },
@@ -99,7 +98,16 @@
         let keys = {};
         let gameStartTime = 0; // Để theo dõi thời gian chơi
         let finalTime = null; // Để lưu thời gian hoàn thành
-        let touch = { up: false, down: false, left: false, right: false };
+        // Trạng thái joystick ảo
+        let joystick = {
+            active: false,
+            startX: 0,
+            startY: 0,
+            currentX: 0,
+            currentY: 0,
+            dx: 0, // Vector di chuyển x (-1 đến 1)
+            dy: 0  // Vector di chuyển y (-1 đến 1)
+        };
         let soundsUnlocked = false;
         let screenShake = {
             duration: 0,
@@ -143,8 +151,8 @@
             player_hit: new Audio('player_hit.mp3') // Âm thanh khi bị va chạm
         };
         // Điều chỉnh âm lượng
-        sounds.background.volume = 0.1; // Giảm xuống còn 0.1
-        sounds.farmer_move.volume = 0.1; // Giảm xuống còn 0.1
+        sounds.background.volume = 0.2; // Giảm xuống còn 0.1
+        sounds.farmer_move.volume = 0.05; // Giảm 50% từ 0.1
         sounds.spammer_attack.volume = 0.1; // Giảm xuống còn 0.1
         sounds.run_normal.volume = 1.0; // Giữ nguyên
         sounds.run_holding.volume = 1.0; // Giữ nguyên
@@ -257,10 +265,18 @@
 
             let dx = 0;
             let dy = 0;
-            if (keys['w'] || keys['ArrowUp'] || touch.up) dy = -1;
-            if (keys['s'] || keys['ArrowDown'] || touch.down) dy = 1;
-            if (keys['a'] || keys['ArrowLeft'] || touch.left) dx = -1;
-            if (keys['d'] || keys['ArrowRight'] || touch.right) dx = 1;
+
+            if (isMobileDevice && joystick.active) {
+                // Trên di động, sử dụng vector từ joystick
+                dx = joystick.dx;
+                dy = joystick.dy;
+            } else {
+                // Trên PC, sử dụng bàn phím
+                if (keys['w'] || keys['arrowup']) dy = -1;
+                if (keys['s'] || keys['arrowdown']) dy = 1;
+                if (keys['a'] || keys['arrowleft']) dx = -1;
+                if (keys['d'] || keys['arrowright']) dx = 1;
+            }
 
             // Giảm tốc độ nếu đang cầm đá
             const currentSpeed = player.holdingStone ? PLAYER_SPEED * PLAYER_HOLDING_STONE_SLOWDOWN : PLAYER_SPEED;
@@ -316,6 +332,7 @@
         function updateSpammersAndBullets() {
             // Spammer bắn đạn
             if (frameCount >= nextGlobalShotFrame) {
+                if (spammers.length > 0) sounds.spammer_attack.play(); // Chỉ phát 1 lần cho tất cả
                 spammers.forEach(spammer => {
                     spawnBullet(spammer);
                 });
@@ -403,7 +420,6 @@
                 dy: Math.sin(angle),
                 symbol: symbols[Math.floor(Math.random() * symbols.length)]
             });
-            sounds.spammer_attack.play();
         }
 
         // --- KIỂM TRA VA CHẠM VÀ TƯƠNG TÁC ---
@@ -763,8 +779,8 @@
             window.addEventListener('keydown', handleKeyDown);
             window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
             
-            if (isMobile()) {
-                setupTouchControls();
+            if (isMobileDevice) {
+                setupJoystickControls();
             }
             
             canvas.addEventListener('click', handleCanvasClick);
@@ -845,28 +861,69 @@
             console.log("Audio has been unlocked.");
         }
 
-        function isMobile() {
-            return /Mobi|Android/i.test(navigator.userAgent);
-        }
+        function setupJoystickControls() {
+            const base = document.getElementById('joystick-base');
+            const handle = document.getElementById('joystick-handle');
+            const baseRadius = base.offsetWidth / 2;
+            const handleRadius = handle.offsetWidth / 2;
+            const maxMove = baseRadius - handleRadius;
 
-        function setupTouchControls() {
-            const controls = document.getElementById('touch-controls');
-            controls.style.display = 'block';
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                tryPlayAllSounds();
+                if (gameState !== STATE_GAMEPLAY) return;
 
-            const buttons = {
-                'touch-up': 'up', 'touch-down': 'down',
-                'touch-left': 'left', 'touch-right': 'right'
+                const touch = e.touches[0];
+                joystick.active = true;
+                joystick.startX = touch.clientX;
+                joystick.startY = touch.clientY;
+
+                base.style.display = 'block';
+                handle.style.display = 'block';
+                base.style.left = `${joystick.startX - baseRadius}px`;
+                base.style.top = `${joystick.startY - baseRadius}px`;
+                handle.style.left = `${joystick.startX - handleRadius}px`;
+                handle.style.top = `${joystick.startY - handleRadius}px`;
+            }, { passive: false });
+
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (!joystick.active) return;
+
+                const touch = e.touches[0];
+                joystick.currentX = touch.clientX;
+                joystick.currentY = touch.clientY;
+
+                let dx = joystick.currentX - joystick.startX;
+                let dy = joystick.currentY - joystick.startY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > maxMove) {
+                    dx = (dx / distance) * maxMove;
+                    dy = (dy / distance) * maxMove;
+                }
+
+                handle.style.left = `${joystick.startX + dx - handleRadius}px`;
+                handle.style.top = `${joystick.startY + dy - handleRadius}px`;
+
+                // Cập nhật vector di chuyển chuẩn hóa
+                joystick.dx = dx / maxMove;
+                joystick.dy = dy / maxMove;
+            }, { passive: false });
+
+            const onTouchEnd = (e) => {
+                if (!joystick.active) return;
+                e.preventDefault();
+                joystick.active = false;
+                joystick.dx = 0;
+                joystick.dy = 0;
+                base.style.display = 'none';
+                handle.style.display = 'none';
             };
 
-            for (const [id, dir] of Object.entries(buttons)) {
-                const btn = document.getElementById(id);
-                btn.addEventListener('touchstart', (e) => { e.preventDefault(); tryPlayAllSounds(); }, { once: true });
-                btn.addEventListener('touchstart', (e) => { e.preventDefault(); touch[dir] = true; });
-                btn.addEventListener('touchend', (e) => { e.preventDefault(); touch[dir] = false; });
-                btn.addEventListener('touchcancel', (e) => { e.preventDefault(); touch[dir] = false; });
-            }
+            canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+            canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
         }
-
         function checkRectCollision(rect1, rect2, size1, size2) {
             const r1 = {
                 x: rect1.x,
