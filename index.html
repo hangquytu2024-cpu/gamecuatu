@@ -213,9 +213,10 @@
         }
 
         function resetGame() {
-            stopAllSounds();
+            stopAllSounds(true); // Dừng tất cả âm thanh trừ nhạc nền
             sounds.farmer_move.play().catch(e => console.log("Interaction needed to play audio"));
-            sounds.background.play().catch(e => console.log("Interaction needed to play audio"));
+            // Nhạc nền sẽ tiếp tục chơi nếu đã được bắt đầu
+            if (sounds.background.paused) sounds.background.play().catch(e => console.log("Interaction needed to play audio"));
             score = 0;
             gameStartTime = performance.now(); // Bắt đầu đếm giờ
             spammers = [];
@@ -492,6 +493,7 @@
 
         function handlePlayerHit() {
             // Không còn mạng, chỉ reset vị trí và bật bất tử
+            sounds.player_hit.currentTime = 0; // Đảm bảo âm thanh phát lại từ đầu
             sounds.player_hit.play(); // Phát âm thanh va chạm
             player.animation.invincible = true;
             player.animation.invincibilityTimer = INVINCIBILITY_DURATION;
@@ -786,6 +788,11 @@
             canvas.addEventListener('click', handleCanvasClick);
         }
 
+        function startGame() {
+            gameState = STATE_GAMEPLAY;
+            resetGame();
+        }
+
         function setupSoundLooping() {
             const soundsToLoop = ['background', 'farmer_move', 'run_normal', 'run_holding'];
             soundsToLoop.forEach(key => {
@@ -804,18 +811,16 @@
             tryPlayAllSounds();
             
             if (gameState === STATE_START) {
-                gameState = STATE_GAMEPLAY;
-                resetGame();
+                startGame();
             } else if (gameState === STATE_WIN) {
-                resetGame();
+                startGame();
             }
         }
         
         function handleCanvasClick(e) {
             tryPlayAllSounds(); // Cần thiết cho trường hợp người dùng chỉ dùng chuột
             if (gameState === STATE_START || gameState === STATE_WIN) {
-                gameState = STATE_GAMEPLAY;
-                resetGame();
+                startGame();
             }
         }
 
@@ -841,8 +846,11 @@
             }
         }
         
-        function stopAllSounds() {
+        function stopAllSounds(keepBackground = false) {
             for (const key in sounds) {
+                if (keepBackground && key === 'background') {
+                    continue; // Bỏ qua nhạc nền nếu được yêu cầu
+                }
                 sounds[key].pause();
                 sounds[key].currentTime = 0;
             }
@@ -871,7 +879,13 @@
             canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 tryPlayAllSounds();
-                if (gameState !== STATE_GAMEPLAY) return;
+
+                if (gameState === STATE_START || gameState === STATE_WIN) {
+                    startGame();
+                    return; // Không xử lý joystick ngay trong lần chạm đầu tiên này
+                }
+
+                if (gameState !== STATE_GAMEPLAY) return; // Chỉ xử lý joystick khi đang chơi
 
                 const touch = e.touches[0];
                 joystick.active = true;
